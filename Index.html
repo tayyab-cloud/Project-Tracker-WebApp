@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html>
+<head>
+ <base target="_top">
+    <!-- Viewport tag hata diya gaya hai -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <style>
+        body { background-color: #f8f9fa; } 
+        .view { display: none; } 
+        .view.active { display: block; }
+        .stat-card { text-align: center; border-radius: 12px; } 
+        .stat-card h1 { font-size: 2.5rem; font-weight: bold; }
+        .stat-card p { font-size: 1rem; color: #6c757d; }
+        .spotlight-card .card-title { font-weight: 600; }
+        .spotlight-card .task-count { font-size: 2.2rem; font-weight: 700; }
+        .spotlight-card .icon { font-size: 1.5rem; }
+        .hidden { display: none !important; }
+        .clear-search-btn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; display: none; z-index: 10; }
+        .clear-search-btn:hover { color: #333; }
+        .table-hover > tbody > tr:hover > * { --bs-table-accent-bg: var(--bs-table-hover-bg); color: var(--bs-table-hover-color); }
+        .table-responsive { overflow-x: auto; } /* Yeh class mobile par table ko scrollable banati hai */
+        .sortable-header { cursor: pointer; user-select: none; }
+        .sortable-header:hover { background-color: #e9ecef; }
+        .sort-icon { font-size: 0.8rem; color: #999; margin-left: 5px; transition: all 0.2s; }
+        .sort-icon.active { color: #000; }
+    </style>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    <!-- HTML CONTENT -->
+    <div class="toast-container position-fixed top-0 end-0 p-3"></div>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#"><i class="bi bi-kanban-fill"></i> Project Tracker</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item"><a class="nav-link active" href="#" data-view="dashboard">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-view="tasks">Tasks</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-view="team">Team</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container mt-4">
+        <div id="mini-loader" class="text-center p-5" style="display: none;">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
+        </div>
+        <div id="content-wrapper"> 
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view active">
+                <h3>Dashboard</h3><hr>
+                <div id="dashboard-stats" class="row g-3"></div>
+                <div id="team-stats-row" class="row g-3 mt-2"><div class="col-md-3"><div class="card shadow-sm"><div class="card-body stat-card"><h1 id="total-members-stat">0</h1><p>Total Team Members</p></div></div></div></div>
+                <hr class="my-4"><h4 class="text-muted mb-3">Member Spotlight</h4><div id="member-spotlight-row" class="row g-3"></div>
+                <div id="charts-row" class="row mt-4">
+                    <div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header fw-bold">Tasks by Status</div><div class="card-body"><div id="piechart_div" style="width: 100%; height: 300px;"></div></div></div></div>
+                    <div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header fw-bold">Tasks per Team Member</div><div class="card-body"><div id="barchart_div" style="width: 100%; height: 300px;"></div></div></div></div>
+                </div>
+            </div>
+
+            <!-- Tasks View (Original Layout) -->
+            <div id="tasks-view" class="view">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h3>All Tasks</h3>
+                    <div class="d-flex align-items-center">
+                        <div class="input-group position-relative me-3">
+                            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="task-search-input" placeholder="Search tasks by title or assignee...">
+                            <i class="bi bi-x-circle-fill clear-search-btn" id="clear-task-search"></i>
+                        </div>
+                        <button class="btn btn-success me-2" id="export-tasks-btn"><i class="bi bi-file-earmark-spreadsheet-fill"></i> Export CSV</button>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal"><i class="bi bi-plus-circle"></i> Add New Task</button>
+                    </div>
+                </div>
+                <hr>
+                <div class="table-responsive">
+                    <table class="table table-hover bg-white rounded shadow-sm">
+                        <thead><tr><th data-sort-by="id" class="sortable-header">ID <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="title" class="sortable-header">Title <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="assignee" class="sortable-header">Assignee <i class="bi bi-arrow-down-up sort-icon"></i></th><th>Assignee Email</th><th data-sort-by="status" class="sortable-header">Status <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="priority" class="sortable-header">Priority <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="dueDate" class="sortable-header">Due Date <i class="bi bi-arrow-down-up sort-icon"></i></th><th>Actions</th></tr></thead>
+                        <tbody id="tasks-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="tasks-pagination-controls" class="d-flex justify-content-center align-items-center mt-3">
+                    <button id="prev-page-btn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Previous</button>
+                    <span id="page-info" class="mx-3 text-muted">Page 1 of 1</span>
+                    <button id="next-page-btn" class="btn btn-outline-secondary btn-sm">Next <i class="bi bi-arrow-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Team View (Original Layout) -->
+            <div id="team-view" class="view">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h3>Team Members</h3>
+                    <div class="d-flex align-items-center">
+                        <div class="input-group position-relative me-3">
+                            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="team-search-input" placeholder="Search by name or email...">
+                            <i class="bi bi-x-circle-fill clear-search-btn" id="clear-team-search"></i>
+                        </div>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMemberModal"><i class="bi bi-person-plus"></i> Add New Member</button>
+                    </div>
+                </div>
+                <hr>
+                <div class="table-responsive">
+                    <table class="table table-hover bg-white rounded shadow-sm">
+                        <thead><tr><th data-sort-by="id" class="sortable-header">ID <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="name" class="sortable-header">Name <i class="bi bi-arrow-down-up sort-icon"></i></th><th data-sort-by="email" class="sortable-header">Email <i class="bi bi-arrow-down-up sort-icon"></i></th><th>Date of Birth</th><th>Address</th><th data-sort-by="age" class="sortable-header">Age <i class="bi bi-arrow-down-up sort-icon"></i></th><th>Actions</th></tr></thead>
+                        <tbody id="team-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="team-pagination-controls" class="d-flex justify-content-center align-items-center mt-3 hidden">
+                    <button id="team-prev-page-btn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Previous</button>
+                    <span id="team-page-info" class="mx-3 text-muted">Page 1 of 1</span>
+                    <button id="team-next-page-btn" class="btn btn-outline-secondary btn-sm">Next <i class="bi bi-arrow-right"></i></button>
+                </div>
+            </div>
+        </div> <!-- Closing div for content-wrapper -->
+    </main>
+
+    <div id="loader" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.8);z-index:9999;display:flex;align-items-center;justify-content:center;"><div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div></div>
+
+    <!-- Saare Modals yahan hain (In mein koi tabdeeli nahi) -->
+    <!-- ... aapke saare modals ... -->
+    <div class="modal fade" id="addTaskModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="addTaskModalLabel">Add a New Task</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="task-form"><div class="mb-3" id="taskId-container" style="display: none;"><label for="taskId" class="form-label">Task ID</label><input type="text" class="form-control" id="taskId" readonly></div><div class="mb-3"><label for="taskTitle" class="form-label">Task Title</label><input type="text" class="form-control" id="taskTitle" required></div><div class="row"><div class="col-md-6 mb-3"><label for="taskAssignee" class="form-label">Assign To</label><select class="form-select" id="taskAssignee" required><option value="" selected disabled>Select an Assignee</option></select></div><div class="col-md-6 mb-3"><label for="taskDueDate" class="form-label">Due Date</label><input type="date" class="form-control" id="taskDueDate" required></div></div><div class="row"><div class="col-md-6 mb-3"><label for="taskStatus" class="form-label">Status</label><select class="form-select" id="taskStatus"><option selected>To Do</option><option>In Progress</option><option>Done</option></select></div><div class="col-md-6 mb-3"><label for="taskPriority" class="form-label">Priority</label><select class="form-select" id="taskPriority"><option>Low</option><option selected>Medium</option><option>High</option></select></div></div><hr><div id="attachments-section" style="display: none;"><h6><i class="bi bi-paperclip"></i> Attachments</h6><div id="attachments-list" class="mb-3"><p class="text-muted small">No files attached yet.</p></div><div id="file-upload-area"><input type="file" id="file-input" class="d-none"><button type="button" class="btn btn-outline-secondary btn-sm" id="select-file-btn"><i class="bi bi-plus-lg"></i> Add File</button><span id="file-upload-status" class="ms-2 small"></span></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary" form="task-form" id="submit-button">Save Task</button></div></div></div></div>
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Confirm Task Deletion</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">Are you sure you want to permanently delete this task?</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" id="confirmDeleteBtn">Yes, Delete</button></div></div></div></div>
+    <div class="modal fade" id="addMemberModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="addMemberModalLabel">Add a New Team Member</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="member-form"><div class="mb-3" id="memberId-container" style="display: none;"><label for="memberId" class="form-label">Member ID</label><input type="text" class="form-control" id="memberId" readonly></div><div class="row"><div class="col-md-6 mb-3"><label for="memberName" class="form-label">Full Name</label><input type="text" class="form-control" id="memberName" required></div><div class="col-md-6 mb-3"><label for="memberEmail" class="form-label">Email Address</label><input type="email" class="form-control" id="memberEmail" required></div></div><div class="row"><div class="col-md-6 mb-3"><label for="memberDob" class="form-label">Date of Birth</label><input type="date" class="form-control" id="memberDob" required></div><div class="col-md-6 mb-3"><label for="memberAddress" class="form-label">Address</label><input type="text" class="form-control" id="memberAddress" required></div></div><div class="mb-3" id="memberRole-container" style="display: none;"><label for="memberRole" class="form-label">Role</label><select class="form-select" id="memberRole"><option>Member</option><option>Admin</option></select></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary" form="member-form" id="saveMemberBtn">Save Member</button></div></div></div></div>
+    <div class="modal fade" id="deleteMemberConfirmModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Confirm Member Deletion</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">Are you sure you want to permanently delete this team member?<br><br><strong class="text-danger">Note:</strong> A member with unfinished tasks cannot be deleted.</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" id="confirmMemberDeleteBtn">Yes, Delete</button></div></div></div></div>
+    
+    <!-- YEH ZAROORI SCRIPT FILE ADD KI GAYI HAI -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+    <script>
+        // =================================================================
+        // 1. GLOBAL VARIABLES
+        // =================================================================
+        let isChartLibReady = false;
+        let tasksCurrentPage = 1;
+        const tasksPerPage = 10;
+        let teamCurrentPage = 1;
+        const teamPerPage = 10;
+        let allTasks = [];
+        let allTeam = [];
+        let userRole = 'Member';
+        let taskSortConfig = { key: 'id', direction: 'asc' };
+        let teamSortConfig = { key: 'id', direction: 'asc' };
+        let stagedFile = null; // <-- NAYA VARIABLE: Select ki hui file ko yahan rakhenge
+
+        // =================================================================
+        // 2. RENDERING & UI HELPER FUNCTIONS
+        // =================================================================
+        function showView(viewId) {
+            const contentWrapper = document.getElementById('content-wrapper');
+            const miniLoader = document.getElementById('mini-loader');
+            contentWrapper.style.display = 'none';
+            miniLoader.style.display = 'block';
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            document.querySelector(`.nav-link[data-view='${viewId}']`).classList.add('active');
+            setTimeout(() => {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                document.getElementById(`${viewId}-view`).classList.add('active');
+                miniLoader.style.display = 'none';
+                contentWrapper.style.display = 'block';
+                if (viewId === 'dashboard') { google.script.run.withSuccessHandler(data => { drawStatusPieChart(data.dashboard); drawTasksPerMemberChart(data.tasksPerMember); }).getInitialData(); }
+            }, 250);
+        }
+        function showToast(message, type = "success") { const toastContainer = document.querySelector(".toast-container"); const iconClass = type === "success" ? "bi-check-circle-fill" : "bi-x-circle-fill"; const bgClass = type === "success" ? "bg-success" : "bg-danger"; const toastHTML = `<div class="toast align-items-center text-white ${bgClass} border-0" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body"><i class="bi ${iconClass} me-2"></i>${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div></div>`; toastContainer.insertAdjacentHTML("beforeend", toastHTML); const newToast = new bootstrap.Toast(toastContainer.lastElementChild, { delay: 4000 }); newToast.show(); toastContainer.lastElementChild.addEventListener("hidden.bs.toast", e => e.target.remove()); }
+        function renderUIBasedOnRole() { const teamNavTab = document.querySelector('.nav-link[data-view="team"]'); const addMemberButton = document.querySelector('button[data-bs-target="#addMemberModal"]'); const addTaskButton = document.querySelector('button[data-bs-target="#addTaskModal"]'); const dashboardMemberCharts = document.getElementById('member-spotlight-row'); const barchartContainer = document.getElementById('barchart_div').parentElement.parentElement; const pieChartContainer = document.getElementById('piechart_div').parentElement.parentElement; if (window.userRole === 'Member') { if (teamNavTab) teamNavTab.parentElement.style.display = 'none'; if (addMemberButton) addMemberButton.style.display = 'none'; if (addTaskButton) addTaskButton.style.display = 'none'; if (dashboardMemberCharts) dashboardMemberCharts.style.display = 'none'; if (barchartContainer) barchartContainer.style.display = 'none'; if (pieChartContainer) pieChartContainer.classList.replace('col-md-6', 'col-md-12'); } else { if (teamNavTab) teamNavTab.parentElement.style.display = 'block'; if (addMemberButton) addMemberButton.style.display = 'inline-block'; if (addTaskButton) addTaskButton.style.display = 'inline-block'; if (dashboardMemberCharts) dashboardMemberCharts.style.display = 'flex'; if (barchartContainer) barchartContainer.style.display = 'block'; if (pieChartContainer) pieChartContainer.classList.replace('col-md-12', 'col-md-6'); } }
+        function renderTasks(tasks) {
+            const tableBody = document.getElementById("tasks-table-body");
+            tableBody.innerHTML = "";
+            const paginatedTasks = tasks.slice((tasksCurrentPage - 1) * tasksPerPage, tasksCurrentPage * tasksPerPage);
+            if (paginatedTasks.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No tasks found.</td></tr>'; } 
+            else { paginatedTasks.forEach(task => { let rowClass = ''; let visualCueHTML = ''; if (task.isOverdue) { rowClass = 'table-danger'; visualCueHTML = '<i class="bi bi-exclamation-triangle-fill text-danger me-2" title="This task is overdue!"></i>'; } else { rowClass = task.status === 'To Do' ? 'table-warning' : task.status === 'In Progress' ? 'table-info' : 'table-success'; } let actionButtonsHTML = `<button class="btn btn-warning btn-sm edit-btn" data-task-id="${task.id}"><i class="bi bi-pencil-square"></i> Edit</button>`; if (window.userRole === 'Admin') { actionButtonsHTML += `<button class="btn btn-danger btn-sm delete-btn ms-1" data-task-id="${task.id}"><i class="bi bi-trash-fill"></i> Delete</button>`; } tableBody.innerHTML += `<tr class="${rowClass}"><td>${task.id}</td><td>${visualCueHTML}${task.title}</td><td>${task.assignee}</td><td>${task.assigneeEmail}</td><td>${task.status}</td><td>${task.priority}</td><td>${task.dueDate}</td><td>${actionButtonsHTML}</td></tr>`; }); }
+            updatePaginationControls(tasks.length);
+        }
+        function renderTeam(team) { const tableBody = document.getElementById("team-table-body"); tableBody.innerHTML = ""; const paginatedTeam = team.slice((teamCurrentPage - 1) * teamPerPage, teamCurrentPage * teamPerPage); if (paginatedTeam.length === 0) { tableBody.innerHTML = '<tr><td colspan="7" class="text-center">No team members found.</td></tr>'; } else { paginatedTeam.forEach(member => { let actionButtonsHTML = ''; if (window.userRole === 'Admin') { actionButtonsHTML = `<button class="btn btn-warning btn-sm edit-member-btn" data-member-id="${member.id}"><i class="bi bi-pencil-square"></i> Edit</button><button class="btn btn-danger btn-sm delete-member-btn ms-1" data-member-id="${member.id}"><i class="bi bi-trash-fill"></i> Delete</button>`; } tableBody.innerHTML += `<tr><td>${member.id}</td><td>${member.name}</td><td>${member.email}</td><td>${member.dob}</td><td>${member.address}</td><td>${member.age}</td><td>${actionButtonsHTML}</td></tr>`; }); } updateTeamPaginationControls(team.length); }
+        function populateAssignees(team) { const select = document.getElementById("taskAssignee"); select.innerHTML = '<option value="" selected disabled>Select an Assignee</option>'; if (team && team.length > 0) { team.forEach(member => select.innerHTML += `<option value="${member.name}">${member.name}</option>`); } }
+        function updatePaginationControls(totalTasks) { const controls = document.getElementById('tasks-pagination-controls'); if (totalTasks <= tasksPerPage) { controls.classList.add('hidden'); return; } controls.classList.remove('hidden'); const totalPages = Math.ceil(totalTasks / tasksPerPage); document.getElementById('page-info').textContent = `Page ${tasksCurrentPage} of ${totalPages}`; document.getElementById('prev-page-btn').disabled = (tasksCurrentPage === 1); document.getElementById('next-page-btn').disabled = (tasksCurrentPage >= totalPages); }
+        function updateTeamPaginationControls(totalMembers) { const controls = document.getElementById('team-pagination-controls'); if (totalMembers <= teamPerPage) { controls.classList.add('hidden'); return; } controls.classList.remove('hidden'); const totalPages = Math.ceil(totalMembers / teamPerPage); document.getElementById('team-page-info').textContent = `Page ${teamCurrentPage} of ${totalPages}`; document.getElementById('team-prev-page-btn').disabled = (teamCurrentPage === 1); document.getElementById('team-next-page-btn').disabled = (teamCurrentPage >= totalPages); }
+        function drawChart(chartType, containerId, chartData, options) { setTimeout(() => { if (!isChartLibReady) { drawChart(chartType, containerId, chartData, options); return; } const container = document.getElementById(containerId); if (!container) return; if (!chartData || chartData.length <= 1) { container.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-muted">No data to display.</div>'; return; } const data = google.visualization.arrayToDataTable(chartData); const chart = new google.visualization[chartType](container); chart.draw(data, options); }, 50); }
+        function drawStatusPieChart(statsData) { const data = [['Status', 'Tasks'], ['To Do', statsData.todo || 0], ['In Progress', statsData.inProgress || 0], ['Done', statsData.done || 0]]; const options = { width: '100%', height: 300, pieHole: 0.4, colors: ['#ffc107', '#0dcaf0', '#198754'], legend: { position: 'bottom' }, chartArea: { left: '5%', top: '5%', width: '90%', height: '75%' } }; drawChart('PieChart', 'piechart_div', data, options); }
+        function drawTasksPerMemberChart(memberData) { const data = [['Member', 'Tasks', { role: 'style' }], ...memberData.map(item => [item[0], item[1], '#0d6efd'])]; const options = { width: '100%', height: 300, legend: { position: 'none' }, hAxis: { title: 'Team Member' }, vAxis: { title: 'No. of Tasks', minValue: 0, format: '0' }, chartArea: { left: '12%', top: '10%', width: '85%', height: '65%' } }; drawChart('ColumnChart', 'barchart_div', data, options); }
+        function renderMemberSpotlightCards(tasksPerMember) { const container = document.getElementById("member-spotlight-row"); if (!container) return; if (!tasksPerMember || tasksPerMember.length === 0) { container.innerHTML = '<p class="text-muted">No tasks assigned yet to feature members.</p>'; return; } const sortedMembers = [...tasksPerMember].sort((a, b) => b[1] - a[1]); const topMembers = sortedMembers.slice(0, 3); let cardsHtml = ''; topMembers.forEach((member, index) => { let cardTitle = '', cardIcon = '', cardColor = ''; if (index === 0) { cardTitle = 'Most Active Member'; cardIcon = 'bi-trophy-fill'; cardColor = 'text-warning'; } else if (index === 1) { cardTitle = 'Runner Up'; cardIcon = 'bi-star-fill'; cardColor = 'text-secondary'; } else { cardTitle = 'Also Active'; cardIcon = 'bi-check-circle-fill'; cardColor = 'text-success'; } cardsHtml += `<div class="col-md-4"><div class="card shadow-sm spotlight-card"><div class="card-body"><h6 class="card-subtitle mb-2 text-muted">${cardTitle}</h6><div class="d-flex justify-content-between align-items-center"><h5 class="card-title mb-0">${member[0]}</h5><i class="bi ${cardIcon} ${cardColor} icon"></i></div><p class="task-count color-primary mt-2">${member[1]}</p><p class="card-text text-muted">Assigned Tasks</p></div></div></div>`; }); container.innerHTML = cardsHtml; }
+        function renderAllDashboardData(data) { document.getElementById("dashboard-stats").innerHTML = `<div class="col-md-3"><div class="stat-card bg-white p-3 shadow-sm"><h1>${data.dashboard.total}</h1><p>Total Tasks</p></div></div><div class="col-md-3"><div class="stat-card bg-white p-3 shadow-sm"><h1>${data.dashboard.todo}</h1><p>To Do</p></div></div><div class="col-md-3"><div class="stat-card bg-white p-3 shadow-sm"><h1>${data.dashboard.inProgress}</h1><p>In Progress</p></div></div><div class="col-md-3"><div class="stat-card bg-white p-3 shadow-sm"><h1>${data.dashboard.done}</h1><p>Done</p></div></div>`; document.getElementById("total-members-stat").innerText = data.teamStats.totalMembers; renderMemberSpotlightCards(data.tasksPerMember); drawStatusPieChart(data.dashboard); drawTasksPerMemberChart(data.tasksPerMember); }
+        function refreshAllData() { google.script.run.withSuccessHandler(data => { window.allTasks = data.tasks; window.allTeam = data.team; renderAllDashboardData(data); renderTasks(data.tasks); renderTeam(data.team); populateAssignees(data.team); }).getInitialData(); }
+        function refreshTasksAndDashboard() { google.script.run.withSuccessHandler(data => { window.allTasks = data.tasks; renderAllDashboardData(data); renderTasks(data.tasks); }).getInitialData(); }
+        function sortAndRenderData(type) { const config = (type === 'tasks') ? taskSortConfig : teamSortConfig; const data = (type === 'tasks') ? window.allTasks : window.allTeam; const key = config.key; const direction = config.direction === 'asc' ? 1 : -1; const priorityMap = { 'Low': 1, 'Medium': 2, 'High': 3 }; data.sort((a, b) => { let valA = a[key]; let valB = b[key]; if (key === 'priority') { valA = priorityMap[valA]; valB = priorityMap[valB]; } else if (key === 'dueDate') { valA = new Date(a[key]); valB = new Date(b[key]); } else if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); } if (valA < valB) return -1 * direction; if (valA > valB) return 1 * direction; return 0; }); if (type === 'tasks') { tasksCurrentPage = 1; renderTasks(data); } else { teamCurrentPage = 1; renderTeam(data); } updateSortIcons(type); }
+        function updateSortIcons(type) { const config = (type === 'tasks') ? taskSortConfig : teamSortConfig; const tableId = (type === 'tasks') ? '#tasks-view' : '#team-view'; document.querySelectorAll(`${tableId} .sort-icon`).forEach(icon => { icon.classList.remove('bi-arrow-down', 'bi-arrow-up', 'active'); icon.classList.add('bi-arrow-down-up'); }); const activeHeader = document.querySelector(`${tableId} [data-sort-by="${config.key}"]`); if (activeHeader) { const icon = activeHeader.querySelector('.sort-icon'); icon.classList.add('active'); icon.classList.remove('bi-arrow-down-up'); icon.classList.add(config.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'); } }
+       // ===== YEH FUNCTION UPDATE HUA HAI: FILE NAME DISPLAY THEEK KIYA GAYA HAI =====
+        // ===== YEH FUNCTION UPDATE HUA HAI: FILE NAME DISPLAY THEEK KARNE KE LIYE FLEXBOX KA ISTEMAL =====
+
+// ===== FINAL & GUARANTEED FUNCTION: FILE NAME DISPLAY THEEK KARNE KE LIYE =====
+// ===== GUARANTEED FINAL SOLUTION: THE "ICON BLOCK" LAYOUT =====
+function renderAttachments(files) {
+    const attachmentsList = document.getElementById('attachments-list');
+
+    // Step 1: Container ko saaf karna aur styles set karna
+    attachmentsList.innerHTML = '';
+    attachmentsList.style.display = 'flex';
+    attachmentsList.style.flexWrap = 'wrap';
+    attachmentsList.style.gap = '15px'; // Har block ke darmiyan faasla
+
+    if (!files || files.length === 0) {
+        // Agar koi file nahi to styles reset karke message dikhana
+        attachmentsList.style.display = 'block'; 
+        attachmentsList.innerHTML = '<p class="text-muted small">No files attached yet.</p>';
+        return;
+    }
+
+    const taskId = document.getElementById('taskId').value;
+
+    // Step 2: Har file ke liye ek block banana
+    files.forEach(file => {
+        // Ek block ka HTML
+        const fileBlockHTML = `
+            <div class="attachment-block" style="position: relative; width: 100px; text-align: center;">
+                
+                <a href="${file.url}" target="_blank" title="${file.name}" style="text-decoration: none; color: inherit; display: block; border: 1px solid #ddd; border-radius: 8px; padding: 10px; height: 100%;">
+                    
+                    <!-- File ka Icon -->
+                    <i class="bi bi-file-earmark-text" style="font-size: 2.5rem; display: block; margin-bottom: 5px;"></i>
+                    
+                    <!-- File ka Naam (Icon ke neeche) -->
+                    <span style="font-size: 12px; word-wrap: break-word; display: block; line-height: 1.2;">
+                        ${file.name}
+                    </span>
+
+                </a>
+
+                <!-- Delete Button (Block ke upar, kone mein) -->
+                <button type="button" class="btn btn-danger btn-sm delete-attachment-btn" 
+                        style="position: absolute; top: -10px; right: -5px; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;"
+                        title="Delete this attachment" data-attachment-id="${file.id}" data-task-id="${taskId}">
+                    <i class="bi bi-x" style="font-size: 1rem;"></i>
+                </button>
+            </div>
+        `;
+        // Block ko list mein add karna
+        attachmentsList.innerHTML += fileBlockHTML;
+    });
+}
+            
+        // === YEH FUNCTION UPDATE HUA HAI - Ab yeh callback functions istemal karega ===
+        function handleFileUpload(file, taskId, successCallback, failureCallback) {
+            const statusSpan = document.getElementById('file-upload-status');
+            const selectBtn = document.getElementById('select-file-btn');
+            
+            selectBtn.disabled = true;
+            statusSpan.innerHTML = `<span class="spinner-border spinner-border-sm text-primary"></span> Uploading ${file.name}...`;
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const fileObject = {
+                    base64Data: e.target.result.split(',')[1],
+                    mimeType: file.type,
+                    fileName: file.name
+                };
+                google.script.run
+                    .withSuccessHandler(response => {
+                        selectBtn.disabled = false;
+                        if (response.status === 'success') {
+                            showToast(response.message, 'success');
+                            // UI ko foran update karo
+                            google.script.run.withSuccessHandler(renderAttachments).getAttachmentsForTask(taskId);
+                            if (successCallback) successCallback(); // <-- Success par callback call karo
+                        } else {
+                            showToast(response.message, 'error');
+                            if (failureCallback) failureCallback(); // <-- Fail par callback call karo
+                        }
+                    })
+                    .withFailureHandler(err => {
+                        selectBtn.disabled = false;
+                        showToast("File upload failed: " + err.message, "error");
+                        if (failureCallback) failureCallback(); // <-- Fail par callback call karo
+                    })
+                    .uploadFileToDrive(fileObject, taskId);
+            };
+            reader.onerror = () => {
+                showToast("Could not read the selected file.", "error");
+                selectBtn.disabled = false;
+                statusSpan.innerHTML = '';
+                if(failureCallback) failureCallback();
+            };
+        }
+
+        // =================================================================
+        // 3. MAIN EXECUTION BLOCK (WHEN PAGE IS READY)
+        // =================================================================
+        document.addEventListener("DOMContentLoaded", function() {
+            const addTaskModal = new bootstrap.Modal(document.getElementById("addTaskModal"));
+            const deleteConfirmModal = new bootstrap.Modal(document.getElementById("deleteConfirmModal"));
+            const addMemberModal = new bootstrap.Modal(document.getElementById("addMemberModal"));
+            const deleteMemberConfirmModal = new bootstrap.Modal(document.getElementById("deleteMemberConfirmModal"));
+
+            google.charts.load('current', { 'packages': ['corechart'] });
+            google.charts.setOnLoadCallback(() => { isChartLibReady = true; });
+
+            google.script.run.withSuccessHandler(data => {
+                window.allTasks = data.tasks; window.allTeam = data.team; window.userRole = data.userRole;
+                renderUIBasedOnRole(); renderAllDashboardData(data); renderTasks(data.tasks); renderTeam(data.team);
+                populateAssignees(data.team); sortAndRenderData('tasks'); sortAndRenderData('team');
+                document.getElementById("loader").style.display = "none";
+            }).withFailureHandler(err => { document.getElementById("loader").innerHTML = `<div class="alert alert-danger">Error: ${err.message}. Please refresh.</div>`; }).getInitialData();
+
+            // =================================================================
+            // 4. ALL EVENT LISTENERS
+            // =================================================================
+            document.querySelector(".navbar-nav").addEventListener("click", e => { if (e.target.matches('.nav-link[data-view]')) { e.preventDefault(); showView(e.target.dataset.view); } });
+
+            document.querySelector('button[data-bs-target="#addTaskModal"]').addEventListener("click", () => {
+                document.getElementById("task-form").reset();
+                document.getElementById("taskId-container").style.display = "none";
+                document.getElementById("addTaskModalLabel").innerText = "Add a New Task";
+                delete document.getElementById("task-form").dataset.editingTaskId;
+                const taskFields = ["taskTitle", "taskAssignee", "taskDueDate", "taskStatus", "taskPriority"];
+                taskFields.forEach(id => { document.getElementById(id).readOnly = false; document.getElementById(id).disabled = false; });
+                document.getElementById("attachments-section").style.display = 'none';
+                
+                // NAYA: Staged file ko reset karo
+                stagedFile = null;
+                document.getElementById('file-upload-status').innerHTML = '';
+            });
+
+            document.querySelector('button[data-bs-target="#addMemberModal"]').addEventListener("click", () => { document.getElementById("member-form").reset(); document.getElementById("memberId-container").style.display = "none"; document.getElementById("memberRole-container").style.display = "none"; document.getElementById("addMemberModalLabel").innerText = "Add New Team Member"; document.getElementById("memberEmail").readOnly = false; delete document.getElementById("member-form").dataset.editingMemberId; });
+
+            document.getElementById("tasks-table-body").addEventListener("click", e => {
+                const editBtn = e.target.closest(".edit-btn");
+                const deleteBtn = e.target.closest(".delete-btn");
+                if (editBtn) {
+                    const taskId = editBtn.dataset.taskId;
+                    const task = window.allTasks.find(t => t.id == taskId);
+                    if (task) {
+                        // NAYA: Staged file ko reset karo jab modal khule
+                        stagedFile = null;
+                        document.getElementById('file-upload-status').innerHTML = '';
+
+                        document.getElementById("task-form").dataset.editingTaskId = taskId;
+                        document.getElementById("taskId-container").style.display = "block";
+                        document.getElementById("addTaskModalLabel").innerText = "Edit Task";
+                        document.getElementById("taskId").value = task.id;
+                        document.getElementById("taskTitle").value = task.title;
+                        document.getElementById("taskAssignee").value = task.assignee;
+                        document.getElementById("taskStatus").value = task.status;
+                        document.getElementById("taskPriority").value = task.priority;
+                        if (task.dueDate) { document.getElementById("taskDueDate").value = new Date(task.dueDate).toISOString().split('T')[0]; } else { document.getElementById("taskDueDate").value = ""; }
+                        
+                        const isMember = window.userRole === 'Member';
+                        document.getElementById("taskTitle").readOnly = isMember; document.getElementById("taskAssignee").disabled = isMember;
+                        document.getElementById("taskDueDate").readOnly = isMember; document.getElementById("taskStatus").disabled = false; document.getElementById("taskPriority").disabled = false;
+                        
+                        const attachmentsSection = document.getElementById('attachments-section');
+                        const attachmentsList = document.getElementById('attachments-list');
+                        attachmentsList.innerHTML = '<div class="spinner-border spinner-border-sm"></div> <span class="small">Loading attachments...</span>';
+                        attachmentsSection.style.display = 'block';
+                        google.script.run.withSuccessHandler(files => { renderAttachments(files); }).withFailureHandler(err => { attachmentsList.innerHTML = '<p class="text-danger small">Could not load attachments.</p>'; }).getAttachmentsForTask(taskId);
+                        
+                        addTaskModal.show();
+                    }
+                } else if (deleteBtn) { document.getElementById("confirmDeleteBtn").dataset.taskIdToDelete = deleteBtn.dataset.taskId; deleteConfirmModal.show(); }
+            });
+            
+            document.getElementById("team-table-body").addEventListener("click", e => { const editBtn = e.target.closest(".edit-member-btn"); const deleteBtn = e.target.closest(".delete-member-btn"); if (editBtn) { const memberId = editBtn.dataset.memberId; const member = window.allTeam.find(m => m.id == memberId); if (member) { document.getElementById("member-form").dataset.editingMemberId = memberId; document.getElementById("memberId-container").style.display = "block"; document.getElementById("addMemberModalLabel").innerText = "Edit Team Member"; document.getElementById("memberId").value = member.id; document.getElementById("memberName").value = member.name; document.getElementById("memberEmail").value = member.email; document.getElementById("memberEmail").readOnly = true; document.getElementById("memberAddress").value = member.address; if(member.dob) { document.getElementById("memberDob").value = new Date(member.dob).toISOString().split('T')[0]; } else { document.getElementById("memberDob").value = ""; } const roleContainer = document.getElementById("memberRole-container"); document.getElementById("memberRole").value = member.role; roleContainer.style.display = window.userRole === 'Admin' ? 'block' : 'none'; addMemberModal.show(); } } else if (deleteBtn) { document.getElementById("confirmMemberDeleteBtn").dataset.memberIdToDelete = deleteBtn.dataset.memberId; deleteMemberConfirmModal.show(); } });
+// ===== NAYA AUR BEHTAR EVENT LISTENER (SWEETALERT2 KE SAATH) =====
+document.getElementById('attachments-list').addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('.delete-attachment-btn');
+    if (!deleteBtn) return;
+
+    const attachmentId = deleteBtn.dataset.attachmentId;
+    const taskId = deleteBtn.dataset.taskId;
+
+    // Puranay 'if (confirm(...))' ki jagah ab yeh SweetAlert2 ka code hai
+    Swal.fire({
+        title: 'Are you sure?',
+        text: "You won't be able to revert this!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33', // Delete button laal rang ka hoga
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+        // Agar user ne "Yes, delete it!" par click kiya to...
+        if (result.isConfirmed) {
+            
+            // ===== Delete ka poora logic ab yahan hai =====
+
+            // Button ko disable karke spinner dikhana
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+            google.script.run
+                .withSuccessHandler(response => {
+                    // Yahan `showToast` ki jagah SweetAlert ka success message dikhana behtar hai
+                    if (response.status === 'success') {
+                        
+                        // IMPORTANT: Success ka message ab yahan dikhayein
+                        Swal.fire(
+                            'Deleted!',
+                            'The file has been successfully deleted.',
+                            'success'
+                        );
+                        
+                        // List ko refresh karna taaki delete hui file foran gayab ho jaye
+                        google.script.run.withSuccessHandler(renderAttachments).getAttachmentsForTask(taskId);
+
+                    } else {
+                        // Agar server se error aaye to toast dikhana theek hai
+                        showToast(response.message, 'error');
+                        // Button ko wapas theek karna
+                        deleteBtn.disabled = false;
+                        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
+                    }
+                })
+                .withFailureHandler(err => {
+                    showToast('Error: ' + err.message, 'error');
+                    // Error par bhi button ko wapas theek karna
+                    deleteBtn.disabled = false;
+                    deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
+                })
+                .deleteAttachment(attachmentId);
+        }
+    });
+});
+
+            // === YEH EVENT LISTENER MUKAMMAL TAUR PAR BADAL GAYA HAI ===
+            document.getElementById("task-form").addEventListener("submit", function(e) {
+                e.preventDefault();
+                const form = e.target;
+                const editingTaskId = form.dataset.editingTaskId;
+                const taskData = {
+                    title: document.getElementById("taskTitle").value,
+                    assignee: document.getElementById("taskAssignee").value,
+                    dueDate: document.getElementById("taskDueDate").value,
+                    status: document.getElementById("taskStatus").value,
+                    priority: document.getElementById("taskPriority").value
+                };
+
+                const submitBtn = document.getElementById("submit-button");
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+
+                const resetFormAndRefresh = (response) => {
+                    showToast(response.message, response.status);
+                    if (response.status === "success") {
+                        form.reset();
+                        stagedFile = null;
+                        document.getElementById('file-upload-status').innerHTML = '';
+                        delete form.dataset.editingTaskId;
+                        addTaskModal.hide();
+                        refreshTasksAndDashboard();
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "Save Task";
+                };
+
+                const failureCallback = (err) => {
+                    showToast("Error: " + (err.message || err), "error");
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "Save Task";
+                };
+
+                // NAYI LOGIC: Pehle file upload karo (agar hai), phir data save karo
+                if (editingTaskId && stagedFile) {
+                    // Scenario 1: Task edit ho raha hai AUR ek file select ki gayi hai
+                    handleFileUpload(stagedFile, editingTaskId, 
+                        () => { // Upload success callback
+                            taskData.id = editingTaskId;
+                            if (window.userRole === 'Admin') {
+                                google.script.run.withSuccessHandler(resetFormAndRefresh).withFailureHandler(failureCallback).updateTask(taskData);
+                            } else {
+                                google.script.run.withSuccessHandler(resetFormAndRefresh).withFailureHandler(failureCallback).updateMyTaskStatus(taskData);
+                            }
+                        },
+                        () => { // Upload failure callback
+                           failureCallback("File upload failed. Task not saved.");
+                        }
+                    );
+                } else {
+                    // Scenario 2: Ya to naya task hai, ya file upload nahi karni
+                    if (editingTaskId) {
+                        taskData.id = editingTaskId;
+                        if (window.userRole === 'Admin') {
+                            google.script.run.withSuccessHandler(resetFormAndRefresh).withFailureHandler(failureCallback).updateTask(taskData);
+                        } else {
+                            google.script.run.withSuccessHandler(resetFormAndRefresh).withFailureHandler(failureCallback).updateMyTaskStatus(taskData);
+                        }
+                    } else {
+                        google.script.run.withSuccessHandler(resetFormAndRefresh).withFailureHandler(failureCallback).addNewTask(taskData);
+                    }
+                }
+            });
+
+
+            document.getElementById("member-form").addEventListener("submit", function(e){ e.preventDefault(); const form = e.target, editingMemberId = form.dataset.editingMemberId; const memberData = { name: document.getElementById("memberName").value, email: document.getElementById("memberEmail").value, dob: document.getElementById("memberDob").value, address: document.getElementById("memberAddress").value, role: document.getElementById("memberRole").value }; const saveBtn = document.getElementById("saveMemberBtn"); saveBtn.disabled = true; saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...'; const callback = response => { showToast(response.message, response.status); if (response.status === "success") { form.reset(); delete form.dataset.editingMemberId; addMemberModal.hide(); refreshAllData(); } saveBtn.disabled = false; saveBtn.innerHTML = "Save Member"; }; if (editingMemberId) { memberData.id = editingMemberId; google.script.run.withSuccessHandler(callback).withFailureHandler(callback).updateTeamMember(memberData); } else { google.script.run.withSuccessHandler(callback).withFailureHandler(callback).addNewTeamMember(memberData); } });
+            document.getElementById("confirmDeleteBtn").addEventListener("click", function(){ const btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...'; google.script.run.withSuccessHandler(response => { showToast(response.message, response.status); if (response.status === "success") { deleteConfirmModal.hide(); refreshTasksAndDashboard(); } btn.disabled = false; btn.innerHTML = "Yes, Delete"; }).withFailureHandler(err => { showToast("Error: " + err.message, "error"); btn.disabled = false; btn.innerHTML = "Yes, Delete"; }).deleteTask(btn.dataset.taskIdToDelete); });
+            document.getElementById("confirmMemberDeleteBtn").addEventListener("click", function(){ const btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...'; google.script.run.withSuccessHandler(response => { showToast(response.message, response.status); if (response.status === "success") { deleteMemberConfirmModal.hide(); refreshAllData(); } btn.disabled = false; btn.innerHTML = "Yes, Delete"; }).withFailureHandler(err => { showToast("Error: ".concat(err.message), "error"); btn.disabled = false; btn.innerHTML = "Yes, Delete"; }).deleteTeamMember(btn.dataset.memberIdToDelete); });
+            document.getElementById("task-search-input").addEventListener("input", function() { const clearBtn = document.getElementById('clear-task-search'); this.value.length > 0 ? clearBtn.style.display = 'block' : clearBtn.style.display = 'none'; tasksCurrentPage = 1; const query = this.value.trim().toLowerCase(); const filteredTasks = window.allTasks.filter(t => t.title.toLowerCase().includes(query) || t.assignee.toLowerCase().includes(query)); renderTasks(filteredTasks); });
+            document.getElementById("team-search-input").addEventListener("input", function() { const clearBtn = document.getElementById('clear-team-search'); this.value.length > 0 ? clearBtn.style.display = 'block' : clearBtn.style.display = 'none'; teamCurrentPage = 1; const query = this.value.trim().toLowerCase(); const filteredTeam = window.allTeam.filter(m => m.name.toLowerCase().includes(query) || m.email.toLowerCase().includes(query)); renderTeam(filteredTeam); });
+            document.getElementById('clear-task-search').addEventListener('click', function() { const searchInput = document.getElementById('task-search-input'); searchInput.value = ''; searchInput.dispatchEvent(new Event('input', { bubbles: true })); });
+            document.getElementById('clear-team-search').addEventListener('click', function() { const searchInput = document.getElementById('team-search-input'); searchInput.value = ''; searchInput.dispatchEvent(new Event('input', { bubbles: true })); });
+            document.getElementById('next-page-btn').addEventListener('click', () => { tasksCurrentPage++; const query = document.getElementById('task-search-input').value.trim().toLowerCase(); const filteredTasks = window.allTasks.filter(t => t.title.toLowerCase().includes(query) || t.assignee.toLowerCase().includes(query)); renderTasks(filteredTasks); });
+            document.getElementById('prev-page-btn').addEventListener('click', () => { tasksCurrentPage--; const query = document.getElementById('task-search-input').value.trim().toLowerCase(); const filteredTasks = window.allTasks.filter(t => t.title.toLowerCase().includes(query) || t.assignee.toLowerCase().includes(query)); renderTasks(filteredTasks); });
+            document.getElementById('team-next-page-btn').addEventListener('click', () => { teamCurrentPage++; const query = document.getElementById('team-search-input').value.trim().toLowerCase(); const filteredTeam = window.allTeam.filter(m => m.name.toLowerCase().includes(query) || m.email.toLowerCase().includes(query)); renderTeam(filteredTeam); });
+            document.getElementById('team-prev-page-btn').addEventListener('click', () => { teamCurrentPage--; const query = document.getElementById('team-search-input').value.trim().toLowerCase(); const filteredTeam = window.allTeam.filter(m => m.name.toLowerCase().includes(query) || m.email.toLowerCase().includes(query)); renderTeam(filteredTeam); });
+            document.querySelector("#tasks-view thead").addEventListener('click', e => { const header = e.target.closest('.sortable-header'); if (!header) return; const sortKey = header.dataset.sortBy; let direction = 'asc'; if (taskSortConfig.key === sortKey && taskSortConfig.direction === 'asc') { direction = 'desc'; } taskSortConfig = { key: sortKey, direction: direction }; sortAndRenderData('tasks'); });
+            document.querySelector("#team-view thead").addEventListener('click', e => { const header = e.target.closest('.sortable-header'); if (!header) return; const sortKey = header.dataset.sortBy; let direction = 'asc'; if (teamSortConfig.key === sortKey && teamSortConfig.direction === 'asc') { direction = 'desc'; } teamSortConfig = { key: sortKey, direction: direction }; sortAndRenderData('team'); });
+            document.getElementById('export-tasks-btn').addEventListener('click', function() { const btn = this; const originalText = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Exporting...'; const query = document.getElementById('task-search-input').value.trim().toLowerCase(); const filteredTasks = window.allTasks.filter(t => t.title.toLowerCase().includes(query) || t.assignee.toLowerCase().includes(query)); if (filteredTasks.length === 0) { showToast("No tasks to export.", "error"); btn.disabled = false; btn.innerHTML = originalText; return; } google.script.run.withSuccessHandler(response => { if (response.status === "success") { const encodedUri = encodeURI("data:text/csv;charset=utf-8," + response.csvData); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", response.filename); document.body.appendChild(link); link.click(); link.remove(); showToast("Tasks exported successfully!", "success"); } else { showToast(response.message, "error"); } btn.disabled = false; btn.innerHTML = originalText; }).withFailureHandler(err => { showToast("Error: " + err.message, "error"); btn.disabled = false; btn.innerHTML = originalText; }).exportTasksToCsv(filteredTasks); });
+            
+            // --- NAYE EVENT LISTENERS FILE ATTACHMENT KE LIYE ---
+            document.getElementById('select-file-btn').addEventListener('click', () => { document.getElementById('file-input').click(); });
+
+            // YEH EVENT LISTENER BADAL GAYA HAI
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    stagedFile = file; // File ko foran upload nahi karna, sirf variable mein save karna hai
+                    // UI mein user ko dikhana hai ke file select ho gayi hai
+                    document.getElementById('file-upload-status').innerHTML = `
+                        <i class="bi bi-paperclip"></i> 
+                        <span class="text-primary">${file.name}</span> 
+                        <button type="button" id="remove-staged-file" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Remove file">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    `;
+                }
+                e.target.value = ''; // Input ko reset karna zaroori hai
+            });
+
+            // NAYA: Staged file ko remove karne ke liye event listener
+            document.getElementById('file-upload-area').addEventListener('click', (e) => {
+                if (e.target.closest('#remove-staged-file')) {
+                    stagedFile = null;
+                    document.getElementById('file-upload-status').innerHTML = '';
+                }
+            });
+
+            window.addEventListener('resize', function() { let resizeTimer; clearTimeout(resizeTimer); resizeTimer = setTimeout(function() { if (document.getElementById('dashboard-view').classList.contains('active')) { google.script.run.withSuccessHandler(data => { drawStatusPieChart(data.dashboard); drawTasksPerMemberChart(data.tasksPerMember); }).getInitialData(); } }, 250); });
+        });
+    </script>
+</body>
+</html>
